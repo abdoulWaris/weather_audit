@@ -47,7 +47,41 @@ export class WeatherDataRepository {
     await this.pool.query(query, values);
   }
 
-  // Méthode modifiée pour inclure les filtres de date
+/**
+   *Ancienne méthode DEPRECATED: Récupère toutes les données d'une location (inefficace)
+   * Utiliser getWeatherDataByLocationAndDateRange à la place
+   */
+  async getWeatherDataByLocation(
+    location: string
+  ): Promise<WeatherData[] | null> {
+    logger.warn('Méthode deprecated appelée: getWeatherDataByLocation. Utiliser getWeatherDataByLocationAndDateRange');
+    
+    const query = `
+      SELECT location, date, temperature, humidity 
+      FROM weather 
+      WHERE location = $1
+      ORDER BY date ASC
+    `;
+
+    try {
+      const result: pg.QueryResult = await this.pool.query(query, [location]);
+
+      if (result.rows.length === 0) {
+        return null;
+      }
+
+      return result.rows.map((row) => WeatherDataSchema.parse(row));
+    } catch (error) {
+      logger.error('Erreur lors de la récupération des données:', error);
+      throw error;
+    }
+  }
+
+
+  // Nouvelle méthode pour inclure les filtres de date
+   /**
+   * OPTIMISÉ: Récupère les données avec filtrage par plage de dates (RECOMMANDÉ)
+   */
   async getWeatherDataByLocationAndDateRange(
     location: string,
     from?: Date,
@@ -78,8 +112,6 @@ export class WeatherDataRepository {
 
     try {
       const result: pg.QueryResult = await this.pool.query(query, values);
-
-      // Si aucun résultat, retourner null
       if (result.rows.length === 0) {
         return null;
       }
@@ -93,20 +125,24 @@ export class WeatherDataRepository {
   }
 
 // Nouvelle méthode pour obtenir les statistiques de température
-  async getTemperatureStats(
+  /**
+   * Calcule toutes les statistiques en une seule requête SQL
+   */
+async getTemperatureStats(
     location: string,
     from?: Date,
     to?: Date
   ): Promise<{ mean: number; max: number; min: number } | null> {
     let query = `
-                SELECT
-                AVG(temperature) as mean,
-                MAX(temperature) as max,
-                MIN(temperature) as min
-                FROM weather
-                WHERE location = $1
-                `;
+      SELECT 
+        AVG(temperature) as mean,
+        MAX(temperature) as max,
+        MIN(temperature) as min
+      FROM weather 
+      WHERE location = $1
+    `;
     const values: any[] = [location];
+
     if (from) {
       query += ` AND date >= $${values.length + 1}`;
       values.push(from);
@@ -115,21 +151,42 @@ export class WeatherDataRepository {
       query += ` AND date <= $${values.length + 1}`;
       values.push(to);
     }
-    const result = await this.pool.query(query, values);
-    if (result.rows.length === 0 || result.rows[0].mean === null) {
-      return null;
+     try {
+      const result: pg.QueryResult = await this.pool.query(query, values);
+      if (result.rows.length === 0 || result.rows[0].mean === null) {
+        return null;
+      }
+
+      return {
+        mean: parseFloat(result.rows[0].mean),
+        max: parseFloat(result.rows[0].max),
+        min: parseFloat(result.rows[0].min),
+      };
+    } catch (error) {
+      logger.error('Erreur lors du calcul des statistiques:', error);
+      throw error;
     }
-    return {
-      mean: parseFloat(result.rows[0].mean),
-      max: parseFloat(result.rows[0].max),
-      min: parseFloat(result.rows[0].min),
-    };
   }
-  
+  /**
+   * Récupère toutes les données météo de la base de données
+   */
   async getAllWeatherData(): Promise<WeatherData[]> {
     const query = "SELECT location, date, temperature, humidity FROM weather";
-    const result: pg.QueryResult = await this.pool.query(query);
-    return result.rows as WeatherData[];
+    try {
+      const result: pg.QueryResult = await this.pool.query(query);
+      return result.rows as WeatherData[];
+    } catch (error) {
+      logger.error('Erreur lors de la récupération de toutes les données météo:', error);
+      throw error;
+    }
+  }
+
+   /**
+   * Ferme proprement le pool de connexions
+   */
+  async close(): Promise<void> {
+    await this.pool.end();
+    logger.info('Pool de connexions fermé');
   }
 }
 
