@@ -21,13 +21,9 @@ export class WeatherDataRepository {
                 temperature DECIMAL,
                 humidity DECIMAL,
                 PRIMARY KEY(location, date)
-            )
-            -- Index pour les requetes par date range
+            );
             CREATE INDEX IF NOT EXISTS idx_weather_location_date ON weather(location, date);
-
-            -- Index pour les requetes analytiques sur la temperature
             CREATE INDEX IF NOT EXISTS idx_weather_date ON weather(date);
-
         `;
     await this.pool.query(query);
   }
